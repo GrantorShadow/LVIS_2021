@@ -25,6 +25,7 @@ img_norm_cfg = dict(
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
+    dict(type='CopyPaste'),
     dict(
         type='Resize',
         img_scale=[(1333, 640), (1333, 672), (1333, 704), (1333, 736),
@@ -37,5 +38,5 @@ train_pipeline = [
     dict(type='DefaultFormatBundle'),
     dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_masks']),
 ]
-data = dict(train=dict(dataset=dict(pipeline=train_pipeline)))
+data = dict(train=dict(pipeline=train_pipeline))
 evaluation = dict(interval=12, metric=['bbox', 'segm'])
