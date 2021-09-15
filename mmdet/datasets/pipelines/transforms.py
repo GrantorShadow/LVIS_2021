@@ -2597,247 +2597,67 @@ class RandomAffine:
                                       dtype=np.float32)
         return translation_matrix
 
-@PIPELINES.register_module()
-class CopyPaste:
-    """ Copy Paste data augmentation.
-
-	This operation randomly cuts and paste's instances from one image and pastes it
-	in another image.
-
-	 The CopyPaste transform steps are as follows:
-
-		 1. Get two images from dataloader
-		 2. Apply two random scaling transforms to the two images
-		 3. Randomly select a set of subclasses from either of the randomly scaled images
-			(add class wise selection func for LVIS) to copy, then copy the masks
-		 3. Paste the masks on the new image, which is randomly chosen from either of the two images
-
-	Args:
-
-	"""
-    def __init__(self,
-                 label_selection=True,
-                 scale=(0.1, 2.0),
-                 max_paste_objects=5,
-                 p=0.5
-                 ):
-        self.max_paste_objects = max_paste_objects
-        self.p = p
-        self.label_selection = label_selection
-        self.resize_scale = scale
-
-    def get_rare_masks(self, masks, labels):
-        """
-		Returns the masks based on class labels
-		Args:
-			masks:
-			labels:
-
-		Returns:
-
-		"""
-        rare = []
-
-        for idx, vals in enumerate(zip(masks, labels)):
-            mask, label = vals
-            if label not in rare:
-                np.delete(masks, idx)
-                np.delete(labels, idx)
-
-        return masks, labels
-
-    def get_random_idx(self, arr):
-        return np.random.randint(0, arr.shape[0], size=self.max_paste_objects)
-
-    def img_add(self, img_src, img_main, mask_src):
-        if len(img_main.shape) == 3:
-            h, w, c = img_main.shape
-        elif len(img_main.shape) == 2:
-            h, w = img_main.shape
-        mask = np.asarray(mask_src, dtype=np.uint8)
-        sub_img1 = cv2.add(img_src, np.zeros(np.shape(img_src), dtype=np.uint8), mask=mask)
-        mask_2 = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
-        mask_2 = np.asarray(mask_2, dtype=np.uint8)
-        sub_img2 = cv2.add(
-            img_main, np.zeros(np.shape(img_main), dtype=np.uint8), mask=mask_2)
-
-        img_main = img_main - sub_img2 + cv2.resize(sub_img1,(
-            img_main.shape[1], img_main.shape[0]), interpolation=cv2.INTER_NEAREST)
-
-        return img_main
-
-    def Large_Scale_Jittering(self, mask, img):
-        rescale_ratio = np.random.uniform(self.resize_scale[0], self.resize_scale[1])
-        h, w, _ = img.shape
-
-        # rescale
-        h_new, w_new = int(h * rescale_ratio), int(w * rescale_ratio)
-        img = cv2.resize(img, (w_new, h_new), interpolation=cv2.INTER_LINEAR)
-        mask = cv2.resize(mask, (w_new, h_new), interpolation=cv2.INTER_LINEAR)
-
-        # cropping and padding
-        x, y = int(np.random.uniform(0, abs(w_new - w))), int(np.random.uniform(0, abs(h_new - h)))
-        if rescale_ratio <= 1.0:  # padding
-            img_pad = np.ones((h, w, 3), dtype=np.uint8) * 168
-            mask_pad = np.zeros((h, w), dtype=np.uint8)
-            img_pad[y:y+h_new, x:x+w_new, :] = img
-            mask_pad[y:y+h_new, x:x+w_new] = mask
-            return mask_pad, img_pad
-        else:  # crop
-            img_crop = img[y:y+h, x:x+w, :]
-            mask_crop = mask[y:y+h, x:x+w]
-            return mask_crop, img_crop
-
-    def random_flip_horizontal(self, mask, img):
-        if np.random.random() < self.p:
-            img = img[:, ::-1, :]
-            mask = mask[:, ::-1]
-        return mask, img
-
-    def copy_paste(self, mask_src, mask_main, img_src, img_main):
-        # for main_mask, mask_source in zip(masks_main, masks_src):
-        mask_src, img_src = self.random_flip_horizontal(mask_src, img_src)
-        mask_main, img_main = self.random_flip_horizontal(mask_main, img_main)
-
-        # Large Scale Jittering
-        mask_src, img_src = self.Large_Scale_Jittering(mask_src, img_src)
-        mask_main, img_main = self.Large_Scale_Jittering(mask_main, img_main)
-
-        # merge the images and masks
-        img = self.img_add(img_src, img_main, mask_src)
-        mask = self.img_add(mask_src, mask_main, mask_src)
-
-        return mask, img
-
-    # TODO get two images, from the wrapper instead of the single image given rn
-    def __call__(self, results):
-
-        # get the image and it's mask
-        img1 = mmcv.imread(results['img_prefix'] + results['img_info']['filename'])
-        masks1 = results.get('gt_masks').masks
-        labels1 = results.get('gt_labels')
-
-        img2 = mmcv.imread(results['img_prefix'] + results['img_info']['filename'])
-        masks2 = results.get('gt_masks').masks
-        labels2 = results.get('gt_labels')
-
-        # if self.label_selection:
-        #     masks1, labels1 = self.get_rare_masks(masks1, results.get('get_labels'))
-        #     masks2, labels2 = self.get_rare_masks(masks1, results.get('get_labels'))
-
-        # choose the mask_main and mask src randomly
-        if np.random.random() < self.p:
-            img_main, masks_main = img1, masks1
-            img_src, masks_src = img2, masks2
-        else:
-            img_main, masks_main = img2, masks2
-            img_src, masks_src = img1, masks1
-
-        # get a fixed number of random masks
-        masks_src = [masks_src[x] for x in self.get_random_idx(masks_src)]
-
-        # quick and dirty way / get all the masks together ; needs to be done on an individual basis later
-        # def concact_masks(arr):
-        #     masks = arr[0]
-        #     for x in range(1, len(arr)):
-        #         masks += arr[x]
-        #     return masks
-        # masks1 = concact_masks(masks1)
-        # masks2 = concact_masks(masks2)
-
-
-
-        # copy paste data augmentation
-        # for mask_m, mask_s
-        # mask, image = self.copy_paste(
-        #     masks_src, masks_main, img_src, img_main)
-
-    # results['img'] = image
-    # results['img_shape'] = image.shape
-    # results['ori_shape'] = image.shape
-    # # results['gt_masks'] = copypaste_bboxes
-    # results['gt_labels'] = copypaste_labels
-
 # @PIPELINES.register_module()
-# class CopyPaste_2:
+# class CopyPaste:
+#     """ Copy Paste data augmentation.
+#
+# 	This operation randomly cuts and paste's instances from one image and pastes it
+# 	in another image.
+#
+# 	 The CopyPaste transform steps are as follows:
+#
+# 		 1. Get two images from dataloader
+# 		 2. Apply two random scaling transforms to the two images
+# 		 3. Randomly select a set of subclasses from either of the randomly scaled images
+# 			(add class wise selection func for LVIS) to copy, then copy the masks
+# 		 3. Paste the masks on the new image, which is randomly chosen from either of the two images
+#
+# 	Args:
+#
+# 	"""
 #     def __init__(self,
 #                  label_selection=True,
 #                  scale=(0.1, 2.0),
 #                  max_paste_objects=5,
-#                  p=0.5,
-#                  occluded_area_thresh=300,
-#                  box_distance_thresh=10
+#                  p=0.5
 #                  ):
 #         self.max_paste_objects = max_paste_objects
 #         self.p = p
 #         self.label_selection = label_selection
 #         self.resize_scale = scale
-#         self.occluded_area_thresh = occluded_area_thresh
-#         self.box_distance_thresh = box_distance_thresh
+#
+#     def get_rare_masks(self, masks, labels):
+#         """
+# 		Returns the masks based on class labels
+# 		Args:
+# 			masks:
+# 			labels:
+#
+# 		Returns:
+#
+# 		"""
+#         rare = []
+#
+#         for idx, vals in enumerate(zip(masks, labels)):
+#             mask, label = vals
+#             if label not in rare:
+#                 np.delete(masks, idx)
+#                 np.delete(labels, idx)
+#
+#         return masks, labels
 #
 #     def get_random_idx(self, arr):
 #         return np.random.randint(0, arr.shape[0], size=self.max_paste_objects)
 #
-#     def random_flip_img_mask_boxes(self, img, masks, boxes):
-#         if np.random.random() < self.p:
-#             img = img[:, ::-1, :]
-#             masks = masks[:, ::-1]
-#             # TODO add boxes logic
-#             return img, masks, boxes
-#         return img, masks, boxes
-#
-#     def rescale_box(self):
-#         #TODO implement box rescale logic
-#         pass
-#
-#     def rescale(self, w, h, arr):
-#         arr = cv2.resize(arr, (w, h), interpolation=cv2.INTER_LINEAR)
-#         return arr
-#
-#     def Large_Scale_Jittering(self, mask, img, box):
-#         rescale_ratio = np.random.uniform(self.resize_scale[0], self.resize_scale[1])
-#         h, w, _ = img.shape
-#
-#         # rescale
-#         h_new, w_new = int(h * rescale_ratio), int(w * rescale_ratio)
-#         img = self.rescale(w_new, h_new, img)
-#         mask = self.rescale(w_new, h_new, mask.astype(np.uint8))
-#         # TODO put boxes logic
-#
-#         # cropping and padding
-#         x, y = int(np.random.uniform(0, abs(w_new - w))), int(np.random.uniform(0, abs(h_new - h)))
-#         if rescale_ratio <= 1.0:  # padding
-#             img_pad = np.ones((h, w, 3), dtype=np.uint8) * 168
-#             mask_pad = np.zeros((h, w), dtype=np.uint8)
-#             img_pad[y:y+h_new, x:x+w_new, :] = img
-#             mask_pad[y:y+h_new, x:x+w_new] = mask
-#             return mask_pad, img_pad, box
-#         else:  # crop
-#             img_crop = img[y:y+h, x:x+w, :]
-#             mask_crop = mask[y:y+h, x:x+w]
-#             return mask_crop, img_crop, box
-#
-#     def get_updated_masks(self, parent_mask, child_mask):
-#         assert parent_mask.shape == child_mask.shape, "Cannot paste two arrays of different size"
-#         return np.where(parent_mask, 0, child_mask)
-#
-#     def get_box_from_mask(self, mask):
-#         # TODO
-#         # do np.argmax along both axes to find the top left corner
-#         # do np.sum along both axis, do np.argmax to find width and height
-#         # PLOT & CHECK, check S's notebook
-#         np.where(mask)
-#         raise NotImplementedError
-#
-#     def is_box_occluded(self, box1, box2):
-#         if np.sum(np.where(abs(box1 - box2) > self.box_distance_thresh, 1, 0)) > 0:
-#             return True
-#         return False
-#
-#     def paste_mask(self, img_src, img_main, mask_src):
+#     def img_add(self, img_src, img_main, mask_src):
+#         if len(img_main.shape) == 3:
+#             h, w, c = img_main.shape
+#         elif len(img_main.shape) == 2:
+#             h, w = img_main.shape
 #         mask = np.asarray(mask_src, dtype=np.uint8)
-#         # TODO check out the cv2.add func
 #         sub_img1 = cv2.add(img_src, np.zeros(np.shape(img_src), dtype=np.uint8), mask=mask)
+#         mask_2 = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+#         mask_2 = np.asarray(mask_2, dtype=np.uint8)
 #         sub_img2 = cv2.add(
 #             img_main, np.zeros(np.shape(img_main), dtype=np.uint8), mask=mask_2)
 #
@@ -2846,91 +2666,424 @@ class CopyPaste:
 #
 #         return img_main
 #
+#     def Large_Scale_Jittering(self, mask, img):
+#         rescale_ratio = np.random.uniform(self.resize_scale[0], self.resize_scale[1])
+#         h, w, _ = img.shape
+#
+#         # rescale
+#         h_new, w_new = int(h * rescale_ratio), int(w * rescale_ratio)
+#         img = cv2.resize(img, (w_new, h_new), interpolation=cv2.INTER_LINEAR)
+#         mask = cv2.resize(mask, (w_new, h_new), interpolation=cv2.INTER_LINEAR)
+#
+#         # cropping and padding
+#         x, y = int(np.random.uniform(0, abs(w_new - w))), int(np.random.uniform(0, abs(h_new - h)))
+#         if rescale_ratio <= 1.0:  # padding
+#             img_pad = np.ones((h, w, 3), dtype=np.uint8) * 168
+#             mask_pad = np.zeros((h, w), dtype=np.uint8)
+#             img_pad[y:y+h_new, x:x+w_new, :] = img
+#             mask_pad[y:y+h_new, x:x+w_new] = mask
+#             return mask_pad, img_pad
+#         else:  # crop
+#             img_crop = img[y:y+h, x:x+w, :]
+#             mask_crop = mask[y:y+h, x:x+w]
+#             return mask_crop, img_crop
+#
+#     def random_flip_horizontal(self, mask, img):
+#         if np.random.random() < self.p:
+#             img = img[:, ::-1, :]
+#             mask = mask[:, ::-1]
+#         return mask, img
+#
+#     def copy_paste(self, mask_src, mask_main, img_src, img_main):
+#         # for main_mask, mask_source in zip(masks_main, masks_src):
+#         mask_src, img_src = self.random_flip_horizontal(mask_src, img_src)
+#         mask_main, img_main = self.random_flip_horizontal(mask_main, img_main)
+#
+#         # Large Scale Jittering
+#         mask_src, img_src = self.Large_Scale_Jittering(mask_src, img_src)
+#         mask_main, img_main = self.Large_Scale_Jittering(mask_main, img_main)
+#
+#         # merge the images and masks
+#         img = self.img_add(img_src, img_main, mask_src)
+#         mask = self.img_add(mask_src, mask_main, mask_src)
+#
+#         return mask, img
+#
+#     # TODO get two images, from the wrapper instead of the single image given rn
 #     def __call__(self, results):
-#         results_cpy = copy.deepcopy(results)
 #
-#         # get these images and thier masks
-#         img_src = cv2.imread(results_cpy['img_prefix'] + results_cpy['img_info']['filename'])
-#         masks_src = results_cpy.get('gt_masks').masks
-#         labels_src = results_cpy.get('gt_labels')
-#         boxes_src = results_cpy.get('gt_boxes')
+#         # get the image and it's mask
+#         img1 = mmcv.imread(results['img_prefix'] + results['img_info']['filename'])
+#         masks1 = results.get('gt_masks').masks
+#         labels1 = results.get('gt_labels')
 #
-#         img_dest = cv2.imread(results_cpy['img_prefix'] + results_cpy['img_info']['filename'])
-#         masks_dest = results_cpy.get('gt_masks').masks
-#         labels_dest = results_cpy.get('gt_labels')
-#         boxes_dest = results_cpy.get('gt_boxes')
+#         img2 = mmcv.imread(results['img_prefix'] + results['img_info']['filename'])
+#         masks2 = results.get('gt_masks').masks
+#         labels2 = results.get('gt_labels')
 #
-#         # get a fixed number of random items
-#         selected_idxs = self.get_random_idx(masks_src)
-#         selected_masks_src = map(masks_src.__getitem__, selected_idxs)
-#         selected_boxes_src = map(boxes_src.__getitem__, selected_idxs)
-#         selected_labels_src = map(labels_src.__getitem__, selected_idxs)
+#         # if self.label_selection:
+#         #     masks1, labels1 = self.get_rare_masks(masks1, results.get('get_labels'))
+#         #     masks2, labels2 = self.get_rare_masks(masks1, results.get('get_labels'))
 #
-#         img_src_flipped, selected_masks_src_flipped, selected_boxes_src_flipped = \
-#             self.random_flip_img_mask_boxes(img_src, selected_masks_src, selected_boxes_src)
+#         # choose the mask_main and mask src randomly
+#         if np.random.random() < self.p:
+#             img_main, masks_main = img1, masks1
+#             img_src, masks_src = img2, masks2
+#         else:
+#             img_main, masks_main = img2, masks2
+#             img_src, masks_src = img1, masks1
 #
-#         #TODO check if we need to flip the dest img + mask as well
+#         # get a fixed number of random masks
+#         masks_src = [masks_src[x] for x in self.get_random_idx(masks_src)]
 #
-#         final_masks, final_boxes, final_labels = [], [], []
-#
-#         for mask_dest, box_dest, label_dest in zip(masks_dest, boxes_dest, labels_dest):
-#             flag_occluded = False
-#             # check if mask_dest should be updated after every iteration
-#             for mask_src, box_src in zip(selected_masks_src_flipped, selected_boxes_src_flipped):
-#                 # Large Scale Jittering
-#                 mask_src, img_src_flipped, box_src = self.Large_Scale_Jittering(mask_src, img_src_flipped, box_src)
-#                 mask_dest, img_dest, box_dest = self.Large_Scale_Jittering(mask_dest, img_dest, box_dest)
-#
-#                 h_dest_img, w_dest_img = img_dest.shape
-#                 mask_src = self.rescale(w_dest_img, h_dest_img, mask_src)
-#
-#                 # given pastable & orig masks, find updated masks (Occulusion)
-#                 mask_dest_updated = self.get_updated_masks(mask_src, mask_dest)
-#
-#                 box_dest_updated = self.get_box_from_mask(mask_dest_updated)
-#
-#                 # get the updated masks / given updated masks remove occluded masks
-#                 if self.is_box_occluded(box_dest_updated, box_dest):
-#                     mask_area = np.sum(mask_dest_updated)
-#                     if mask_area < self.occluded_area_thresh:
-#                         flag_occluded = True
-#                         break
-#
-#             if not flag_occluded:
-#                 final_masks.append(mask_dest_updated)
-#                 final_boxes.append(box_dest_updated)
-#                 final_labels.append(label_dest)
-#
-#         for mask in final_masks:
+#         # quick and dirty way / get all the masks together ; needs to be done on an individual basis later
+#         # def concact_masks(arr):
+#         #     masks = arr[0]
+#         #     for x in range(1, len(arr)):
+#         #         masks += arr[x]
+#         #     return masks
+#         # masks1 = concact_masks(masks1)
+#         # masks2 = concact_masks(masks2)
 #
 #
-#         # return to mmdet in pipeline
-#         final_masks.extend(selected_masks_src_flipped)
-#         final_boxes.extend(selected_boxes_src_flipped)
-#         final_labels.extend(selected_labels_src)
 #
-#         # TODO paste masks (updated + pastable)  to final dest img
-#
-#
-#                 # # merge the images and masks
-#                 # img_dest = self.img_add(img_src_flipped, img_dest, mask_src)
-#                 # mask_merged = self.img_add(mask_src, mask_dest, mask_src)
-#
-#                 # mask, image = self.copy_paste(
-#                 # masks_src, masks_main, img_src, img_main)
+#         # copy paste data augmentation
+#         # for mask_m, mask_s
+#         # mask, image = self.copy_paste(
+#         #     masks_src, masks_main, img_src, img_main)
 #
 #     # results['img'] = image
 #     # results['img_shape'] = image.shape
 #     # results['ori_shape'] = image.shape
 #     # # results['gt_masks'] = copypaste_bboxes
 #     # results['gt_labels'] = copypaste_labels
-#
-#
-#     def calc_distance_btw_boxes(self):
-#         pass
-#     def calculate_bbox_from_mask(self):
-#         pass
-#
-#     def calc_mask_area(self):
-#         pass
 
+@PIPELINES.register_module()
+class CopyPaste:
+    def __init__(self,
+                 label_selection=True,
+                 scale=(0.1, 2.0),
+                 max_paste_objects=5,
+                 p=0.5,
+                 occluded_area_thresh=300,
+                 box_distance_thresh=10,
+                 max_iters=1
+                 ):
+        self.max_paste_objects = max_paste_objects
+        self.p = p
+        self.label_selection = label_selection
+        self.resize_scale = scale
+        self.occluded_area_thresh = occluded_area_thresh
+        self.box_distance_thresh = box_distance_thresh
+        self.max_iters = max_iters
+
+    def get_indexes(self, dataset):
+        """Call function to collect indexes.
+
+        Args:
+            dataset (:obj:`MultiImageMixDataset`): The dataset.
+
+        Returns:
+            list: indexes.
+        """
+
+        for i in range(self.max_iters):
+            index = random.randint(0, len(dataset))
+            gt_bboxes_i = dataset.get_ann_info(index)['bboxes']
+            if len(gt_bboxes_i) != 0:
+                break
+
+        return index
+
+    def get_random_idx(self, arr):
+        return np.random.randint(0, arr.shape[0], size=self.max_paste_objects)
+
+    def random_flip_img_mask_boxes(self, img, masks, boxes):
+        if np.random.random() < self.p:
+            img = img[:, ::-1, :]
+            masks = masks[:, ::-1]
+
+            H, W, _ = img.shape
+            bbox = boxes.copy() # remove this
+            x_max = W - bbox[:, 0]
+            x_min = W - bbox[:, 2]
+            bbox[:, 0] = x_min
+            bbox[:, 2] = x_max
+            return img, masks, bbox
+
+        return img, masks, boxes
+
+
+    # reshaped_img_shape = (w,h)
+    # img_shape = (w,h)
+    # box = (num_boxes*4)
+    def rescale_box(self, reshaped_img_shape, img_shape, box):
+        scale = np.divide(reshaped_img_shape, img_shape)
+        new_top_left_corner = np.multiply(box[:,:2], scale)
+        new_bottom_right_corner = np.multiply(box[:,2:], scale)
+        return np.hstack((new_top_left_corner, new_bottom_right_corner))
+
+    def rescale(self, w, h, arr):
+        arr = cv2.resize(arr, (w, h), interpolation=cv2.INTER_LINEAR)
+        return arr
+
+    def get_rescale_ratio(self, n_values):
+        ratio = []
+        for x in range(n_values):
+            ratio.append(np.random.uniform(self.resize_scale[0], self.resize_scale[1]))
+        return ratio
+
+    def Large_Scale_Jittering(self, mask, img, box, rescale_ratio):
+        # rescale_ratio = np.random.uniform(self.resize_scale[0], self.resize_scale[1])
+        h, w, _ = img.shape
+
+        # rescale
+        h_new, w_new = int(h * rescale_ratio), int(w * rescale_ratio)
+        img = self.rescale(w_new, h_new, img)
+        mask = self.rescale(w_new, h_new, mask.astype(np.uint8))
+        # mask =
+        # box =
+        # TODO put boxes logic
+
+        # cropping and padding
+        x, y = int(np.random.uniform(0, abs(w_new - w))), int(np.random.uniform(0, abs(h_new - h)))
+        if rescale_ratio <= 1.0:  # padding
+            img_pad = np.ones((h, w, 3), dtype=np.uint8) * 168
+            mask_pad = np.zeros((h, w), dtype=np.uint8)
+            img_pad[y:y+h_new, x:x+w_new, :] = img
+            mask_pad[y:y+h_new, x:x+w_new] = mask
+            return mask_pad, img_pad, box
+        else:  # crop
+            img_crop = img[y:y+h, x:x+w, :]
+            mask_crop = mask[y:y+h, x:x+w]
+
+            if np.sum(mask_crop) < 3:
+                mask_crop = None
+                box = None
+            return mask_crop, img_crop, box
+
+    def get_updated_masks(self, parent_mask, child_mask):
+        assert parent_mask.shape == child_mask.shape, "Cannot paste two arrays of different size"
+        return np.where(parent_mask, 0, child_mask)
+
+    def get_box_from_mask(self, mask): # [x,y,w,h] format
+        """Convert mask Y to a bounding box, assumes 0 as background nonzero object"""
+        X_vals, Y_vals  = np.nonzero(mask) # gives in a Xi , Yi co-ord system in the cols and rows
+        if len(Y_vals)==0:
+            return np.zeros(4, dtype=np.float32)
+        y1 = np.min(Y_vals)
+        x1 = np.min(X_vals)
+        y2 = np.max(Y_vals)
+        x2 = np.max(X_vals)
+        return np.array([x1, y1, x2, y2], dtype=np.float32)
+
+    def is_box_occluded(self, box1, box2): # calculates the distance between masks
+        if np.sum(np.where(abs(box1 - box2) > self.box_distance_thresh, 1, 0)) > 0:
+            return True
+        return False
+
+    def paste_mask(self, img_src, img_main, mask_src):
+        # mask = np.asarray(mask_src, dtype=np.uint8)
+        # # TODO check out the cv2.add func
+        # sub_img1 = cv2.add(img_src, np.zeros(np.shape(img_src), dtype=np.uint8), mask=mask)
+        # sub_img2 = cv2.add(
+        #     img_main, np.zeros(np.shape(img_main), dtype=np.uint8), mask=mask_2)
+        #
+        # img_main = img_main - sub_img2 + cv2.resize(sub_img1,(
+        #     img_main.shape[1], img_main.shape[0]), interpolation=cv2.INTER_NEAREST)
+
+        return img_main
+
+    def get_box_area(self, box):
+        return (box[3] - box[1]) * (box[2] - box[0])
+
+    #img_shape = (h,w)
+    #boxes = np.array([])
+    def clip_box(self, bbox, x1y1wh):
+        x_, y_, w_, h_ = x1y1wh
+        bbox = np.copy(bbox)
+        bbox_x1 = np.max((np.min((bbox[:, 0], np.tile(x_+w_-1, bbox.shape[0])), axis=0), np.tile(x_, bbox.shape[0])), axis=0)
+        bbox_y1 = np.max((np.min((bbox[:, 1], np.tile(y_+h_-1, bbox.shape[0])), axis=0), np.tile(y_, bbox.shape[0])), axis=0)
+        bbox_x2 = np.max((np.min((bbox[:, 2], np.tile(x_+w_-1, bbox.shape[0])), axis=0), np.tile(x_, bbox.shape[0])), axis=0)
+        bbox_y2 = np.max((np.min((bbox[:, 3], np.tile(y_+h_-1, bbox.shape[0])), axis=0), np.tile(y_, bbox.shape[0])), axis=0)
+        return np.transpose(np.vstack((bbox_x1, bbox_y1, bbox_x2, bbox_y2)))
+
+    def dest_jitter(self, img_dest, masks_dest, boxes_dest, labels_dest):
+
+        # destination jitter
+        dest_img_rescale_ratio = self.get_rescale_ratio(1)[0]
+        w, h, _ = img_dest.shape
+
+        # rescale
+        h_new, w_new = int(h * dest_img_rescale_ratio), int(w * dest_img_rescale_ratio)
+        img_dest_rescaled = self.rescale(w_new, h_new, img_dest)
+
+        # mask rescale
+        masks_dest_rescaled, boxes_dest_rescaled = [], []
+        for mask, box in zip(masks_dest, boxes_dest):
+            masks_dest_rescaled.append(self.rescale(w_new, h_new, mask.astype(np.uint8)))
+            boxes_dest_rescaled.append(self.rescale_box((w_new, h_new), (w,h), np.array([box]))[0])
+
+        # get random points for crop / pad
+        x, y = int(np.random.uniform(0, abs(w_new - w))), int(np.random.uniform(0, abs(h_new - h)))
+
+        final_dest_img, final_dest_masks, final_dest_boxes, final_dest_labels = None, [], [], []
+
+        if dest_img_rescale_ratio <= 1.0:
+            img_dest_rescaled_pad = np.ones((w, h, 3), dtype=np.uint8) * 168
+            img_dest_rescaled_pad[x:x+w_new, y:y+h_new, :] = img_dest_rescaled
+            final_dest_img = img_dest_rescaled_pad
+        else:  # crop
+            img_crop = img_dest_rescaled[x:x+w, y:y+h, :]
+            final_dest_img = img_crop
+
+        for mask, box, label in zip(masks_dest_rescaled, boxes_dest_rescaled, labels_dest):
+            # crop the masks and the boxes
+            if dest_img_rescale_ratio <= 1.0:  # padding
+                mask_pad = np.zeros((w,h), dtype=np.uint8)
+                mask_pad[x:x+w_new, y:y+h_new] = mask
+                final_dest_masks.append(mask_pad)
+                box[0] += x
+                box[1] += y
+                box[2] += x
+                box[3] += y
+                final_dest_boxes.append(box)
+                final_dest_labels.append(label)
+            else:  # crop
+                mask_crop = mask[y:y+h, x:x+w]
+                box = self.clip_box(np.array([box]), (x, y, w, h))[0]
+                if np.sum(mask_crop) >= 30:
+                    final_dest_masks.append(mask_crop)
+                    final_dest_boxes.append(box)
+                    final_dest_labels.append(label)
+
+        return final_dest_img, final_dest_boxes, final_dest_masks, final_dest_labels
+
+    def src_jitter(self, img_src, masks_src, boxes_src, labels_src):
+
+        src_img_rescale_ratios = self.get_rescale_ratio(len(masks_src))
+        w, h, _ = img_src.shape
+
+        masks_src_rescaled, boxes_src_rescaled, images_src_rescaled, x_y_rndm = [], [], [], []
+
+        for mask, box, rescale_ratio in zip(masks_src, boxes_src, src_img_rescale_ratios):
+            # rescale
+            h_new, w_new = int(h * rescale_ratio), int(w * rescale_ratio)
+            img_src_rescaled = self.rescale(w_new, h_new, img_src)
+
+            x, y = int(np.random.uniform(0, abs(w_new - w))), int(np.random.uniform(0, abs(h_new - h)))
+            x_y_rndm.append((x, y, w_new, h_new))
+
+            masks_src_rescaled.append(self.rescale(w_new, h_new, mask.astype(np.uint8)))
+            boxes_src_rescaled.append(self.rescale_box((w_new, h_new), (w, h), np.array([box]))[0])
+            images_src_rescaled.append(img_src_rescaled)
+
+        final_src_imgs, final_src_masks, final_src_boxes, final_src_labels = [], [], [], []
+
+        for mask, box, img, rescale_ratio, x_y, label in zip(
+                masks_src_rescaled, boxes_src_rescaled, images_src_rescaled, src_img_rescale_ratios, x_y_rndm,
+                labels_src):
+
+            x, y, w_new, h_new = x_y
+
+            # crop the masks and the boxes
+            if rescale_ratio <= 1.0:  # padding
+                img_src_rescaled_pad = np.ones((w, h, 3), dtype=np.uint8) * 168
+                img_src_rescaled_pad[x:x+w_new, y:y+h_new, :] = img
+                final_src_imgs.append(img_src_rescaled_pad)
+
+                mask_pad = np.zeros((w,h), dtype=np.uint8)
+                mask_pad[x:x+w_new, y:y+h_new] = mask
+                final_src_masks.append(mask_pad)
+                box[0] += x
+                box[1] += y
+                box[2] += x
+                box[3] += y
+                final_src_boxes.append(box)
+                final_src_labels.append(label)
+
+            else:  # crop
+                img_crop = img[x:x+w, y:y+h, :]
+                mask_crop = mask[y:y+h, x:x+w]
+                box = self.clip_box(np.array([box]), (x, y, w, h))[0]
+                if np.sum(mask_crop) >= 30:
+                    final_src_masks.append(mask_crop)
+                    final_src_imgs.append(img_crop)
+                    final_src_boxes.append(box)
+                    final_src_labels.append(label)
+
+        return final_src_imgs, final_src_boxes, final_src_masks, final_src_labels
+
+    def __call__(self, results):
+        results_cpy = copy.deepcopy(results)
+        results_cpy2 = results_cpy['mix_results'][0]
+
+        # get these images and thier masks
+        img_src = cv2.imread(results_cpy['img_prefix'] + results_cpy['img_info']['filename'])
+        masks_src = results_cpy.get('gt_masks').masks
+        labels_src = results_cpy.get('gt_labels')
+        boxes_src = results_cpy.get('gt_bboxes')
+
+        img_dest = cv2.imread(results_cpy2['img_prefix'] + results_cpy2['img_info']['filename'])
+        masks_dest = results_cpy2.get('gt_masks').masks
+        labels_dest = results_cpy2.get('gt_labels')
+        boxes_dest = results_cpy2.get('gt_bboxes')
+
+        # get a fixed number of random items
+        selected_idxs = self.get_random_idx(masks_src)
+        selected_masks_src = np.array(list(map(masks_src.__getitem__, selected_idxs)))
+        selected_boxes_src = np.array(list(map(boxes_src.__getitem__, selected_idxs)))
+        selected_labels_src = np.array(list(map(labels_src.__getitem__, selected_idxs)))
+
+        img_src_flipped, selected_masks_src_flipped, selected_boxes_src_flipped = \
+            self.random_flip_img_mask_boxes(img_src, selected_masks_src, selected_boxes_src)
+
+        rescaled_dest_img, rescaled_dest_boxes, rescaled_dest_masks, rescaled_dest_labels = self.dest_jitter(img_dest, masks_dest, boxes_dest, labels_dest)
+
+        rescaled_src_imgs, rescaled_src_boxes, rescaled_src_masks, rescaled_src_labels = self.src_jitter(img_src,
+                                                                                                         selected_masks_src_flipped,
+                                                                                                         selected_boxes_src_flipped,
+                                                                                                         selected_labels_src)
+
+        pastable_src_imgs, pastable_src_boxes, pastable_src_masks = [], [], []
+
+        # get the pastable items
+        for src_img, src_box, src_mask in zip(rescaled_src_imgs, rescaled_src_boxes, rescaled_src_masks):
+            w, h, _ = rescaled_dest_img.shape
+            w_src, h_src, _ = src_img.shape
+            pastable_src_boxes.append(self.rescale_box((w,h), (w_src, h_src), np.array([src_box]))[0])
+            pastable_src_imgs.append(self.rescale(w, h, src_img))
+            pastable_src_masks.append(self.rescale(w, h, src_mask))
+
+        collated_pastable_src_mask = np.where(np.any(pastable_src_masks, axis=0), 1, 0)
+
+        final_dest_masks, final_dest_boxes, final_dest_labels = [], [], []
+
+        # heuristics check
+        for dest_mask, dest_box, dest_label in zip(rescaled_dest_masks, rescaled_dest_boxes, rescaled_dest_labels):
+            updated_dest_mask = self.get_updated_masks(collated_pastable_src_mask, dest_mask)
+
+            updated_dest_box = self.get_box_from_mask(updated_dest_mask)
+            if np.sum(updated_dest_mask) <= self.occluded_area_thresh:
+                if self.is_box_occluded(updated_dest_box, dest_box):
+                    continue
+            final_dest_boxes.append(dest_box)
+            final_dest_masks.append(dest_mask)
+            final_dest_labels.append(dest_label)
+
+        for src_mask, src_img in zip(pastable_src_masks, pastable_src_imgs):
+            final_pastable_mask_cutout = cv2.bitwise_and(src_img, src_mask)
+            rescaled_dest_img = cv2.add(rescaled_dest_img, final_pastable_mask_cutout)
+
+        final_dest_boxes.append(pastable_src_boxes)
+        final_dest_masks.append(pastable_src_masks)
+        final_dest_labels.append(rescaled_src_labels)
+
+        results['img'] = rescaled_dest_img
+        results['img_shape'] = rescaled_dest_img.shape
+        results['ori_shape'] = rescaled_dest_img.shape
+        results['gt_masks'] = final_dest_masks
+        results['gt_bboxes'] = final_dest_boxes
+        results['gt_labels'] = final_dest_labels
+
+        return results
