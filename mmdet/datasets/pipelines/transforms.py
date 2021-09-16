@@ -2644,17 +2644,17 @@ class CopyPaste:
         return np.random.randint(0, arr.shape[0], size=self.max_paste_objects)
 
     def random_flip_img_mask_boxes(self, img, masks, boxes):
-        # if np.random.random() < self.p:
-        img = img[:, ::-1, :]
-        masks = masks[:, :, ::-1]
+        if np.random.random() < self.p:
+            img = img[:, ::-1, :]
+            masks = masks[:, :, ::-1]
 
-        H, W, _ = img.shape
-        bbox = boxes.copy() # remove this
-        x_max = W - bbox[:, 0]
-        x_min = W - bbox[:, 2]
-        bbox[:, 0] = x_min
-        bbox[:, 2] = x_max
-        # return img, masks, bbox
+            H, W, _ = img.shape
+            bbox = boxes.copy() # remove this
+            x_max = W - bbox[:, 0]
+            x_min = W - bbox[:, 2]
+            bbox[:, 0] = x_min
+            bbox[:, 2] = x_max
+            return img, masks, bbox
 
         return img, masks, boxes
 
