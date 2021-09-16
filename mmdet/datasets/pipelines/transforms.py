@@ -24,6 +24,9 @@ except ImportError:
     albumentations = None
     Compose = None
 
+import PIL.Image as im
+import PIL.ImageDraw as draw
+
 
 @PIPELINES.register_module()
 class Resize:
@@ -2695,17 +2698,17 @@ class CopyPaste:
     def clip_box(self, bbox, x1y1wh):
         x_, y_, w_, h_ = x1y1wh
         bbox = np.copy(bbox)
-        bbox_x1 = np.max((np.min((bbox[:, 0], np.tile(x_+w_-1, bbox.shape[0])), axis=0), np.tile(x_, bbox.shape[0])), axis=0)
-        bbox_y1 = np.max((np.min((bbox[:, 1], np.tile(y_+h_-1, bbox.shape[0])), axis=0), np.tile(y_, bbox.shape[0])), axis=0)
-        bbox_x2 = np.max((np.min((bbox[:, 2], np.tile(x_+w_-1, bbox.shape[0])), axis=0), np.tile(x_, bbox.shape[0])), axis=0)
-        bbox_y2 = np.max((np.min((bbox[:, 3], np.tile(y_+h_-1, bbox.shape[0])), axis=0), np.tile(y_, bbox.shape[0])), axis=0)
+        bbox_x1 = np.max((np.min((bbox[:, 0], np.tile(x_+w_-1, bbox.shape[0])), axis=0), np.tile(x_, bbox.shape[0])), axis=0) - np.tile(x_, bbox.shape[0])
+        bbox_y1 = np.max((np.min((bbox[:, 1], np.tile(y_+h_-1, bbox.shape[0])), axis=0), np.tile(y_, bbox.shape[0])), axis=0) - np.tile(y_, bbox.shape[0])
+        bbox_x2 = np.max((np.min((bbox[:, 2], np.tile(x_+w_-1, bbox.shape[0])), axis=0), np.tile(x_, bbox.shape[0])), axis=0) - np.tile(x_, bbox.shape[0])
+        bbox_y2 = np.max((np.min((bbox[:, 3], np.tile(y_+h_-1, bbox.shape[0])), axis=0), np.tile(y_, bbox.shape[0])), axis=0) - np.tile(y_, bbox.shape[0])
         return np.transpose(np.vstack((bbox_x1, bbox_y1, bbox_x2, bbox_y2)))
 
     def dest_jitter(self, img_dest, masks_dest, boxes_dest, labels_dest):
 
         # destination jitter
         dest_img_rescale_ratio = self.get_rescale_ratio(1)[0]
-        w, h, _ = img_dest.shape
+        h, w, _ = img_dest.shape
 
         # rescale
         h_new, w_new = int(h * dest_img_rescale_ratio), int(w * dest_img_rescale_ratio)
@@ -2723,18 +2726,18 @@ class CopyPaste:
         final_dest_img, final_dest_masks, final_dest_boxes, final_dest_labels = None, [], [], []
 
         if dest_img_rescale_ratio <= 1.0:
-            img_dest_rescaled_pad = np.ones((w, h, 3), dtype=np.uint8) * 168
-            img_dest_rescaled_pad[x:x+w_new, y:y+h_new, :] = img_dest_rescaled
+            img_dest_rescaled_pad = np.ones((h, w, 3), dtype=np.uint8) * 168
+            img_dest_rescaled_pad[y:y+h_new, x:x+w_new, :] = img_dest_rescaled
             final_dest_img = img_dest_rescaled_pad
         else:  # crop
-            img_crop = img_dest_rescaled[x:x+w, y:y+h, :]
+            img_crop = img_dest_rescaled[y:y+h, x:x+w, :]
             final_dest_img = img_crop
 
         for mask, box, label in zip(masks_dest_rescaled, boxes_dest_rescaled, labels_dest):
             # crop the masks and the boxes
             if dest_img_rescale_ratio <= 1.0:  # padding
-                mask_pad = np.zeros((w,h), dtype=np.uint8)
-                mask_pad[x:x+w_new, y:y+h_new] = mask
+                mask_pad = np.zeros((h, w), dtype=np.uint8)
+                mask_pad[y:y+h_new, x:x+w_new] = mask
                 final_dest_masks.append(mask_pad)
                 box[0] += x
                 box[1] += y
@@ -2838,6 +2841,7 @@ class CopyPaste:
                                                                                                          selected_boxes_src_flipped,
                                                                                                          selected_labels_src)
 
+        #CHECK for empty lists
         pastable_src_imgs, pastable_src_boxes, pastable_src_masks = [], [], []
 
         # get the pastable items
