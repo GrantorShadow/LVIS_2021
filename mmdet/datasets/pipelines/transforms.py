@@ -2813,7 +2813,7 @@ class CopyPaste:
         return final_src_imgs, final_src_boxes, final_src_masks, final_src_labels
 
     def add_box_mask_label_2_dict(self, box, mask, label, dct, idx):
-        dct[idx] = {"box":box, "mask":mask, "label":label}
+        dct[idx] = {"box":box, "mask":mask, "label":label, "is_valid":True}
         return dct
 
     def __call__(self, results):
@@ -2868,7 +2868,7 @@ class CopyPaste:
 
             updated_dest_box = self.get_box_from_mask(updated_dest_mask)
             if np.sum(updated_dest_mask) <= self.occluded_area_thresh:
-                if self.is_box_occluded(updated_dest_box, dest_box):
+                if self.is_box_occluded(updated_dest_box, dest_box, self.box_distance_thresh):
                     continue
             final_dest_boxes.append(dest_box)
             final_dest_masks.append(dest_mask)
@@ -2885,18 +2885,20 @@ class CopyPaste:
             rescaled_dest_img = cv2.add(rescaled_dest_img, final_pastable_mask_cutout)
 
             for idx in final_src_data.keys():
-                priority_bx = src_box
-                old_bx = final_src_data[idx]["box"]
-                if self.is_box_occluded(priority_bx, old_bx, self.box_distance_thresh):
-                    final_src_data.pop(idx)
+                if final_src_data[idx]['is_valid']:
+                    priority_bx = src_box
+                    old_bx = final_src_data[idx]["box"]
+                    if self.is_box_occluded(priority_bx, old_bx, self.box_distance_thresh):
+                        final_src_data[idx]["is_valid"] = False
 
             self.add_box_mask_label_2_dict(src_box, src_mask, src_label, final_src_data, dict_index)
             dict_index += 1
 
         for vals in final_src_data.values():
-            final_dest_boxes.append(vals['box'])
-            final_dest_masks.append(vals['mask'])
-            final_dest_labels.append(vals['label'])
+            if vals['is_valid']:
+                final_dest_boxes.append(vals['box'])
+                final_dest_masks.append(vals['mask'])
+                final_dest_labels.append(vals['label'])
 
         results['img'] = rescaled_dest_img
         results['img_shape'] = rescaled_dest_img.shape
