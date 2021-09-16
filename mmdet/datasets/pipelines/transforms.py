@@ -2610,7 +2610,7 @@ class CopyPaste:
                  p=0.5,
                  occluded_area_thresh=300,
                  box_distance_thresh=10,
-                 max_iters=1
+                 max_iters=1,
                  ):
         self.max_paste_objects = max_paste_objects
         self.p = p
@@ -2639,20 +2639,22 @@ class CopyPaste:
         return index
 
     def get_random_idx(self, arr):
+        if arr.shape[0] <= self.max_paste_objects:
+            return np.random.randint(0, arr.shape[0], size=arr.shape[0])
         return np.random.randint(0, arr.shape[0], size=self.max_paste_objects)
 
     def random_flip_img_mask_boxes(self, img, masks, boxes):
-        if np.random.random() < self.p:
-            img = img[:, ::-1, :]
-            masks = masks[:, ::-1]
+        # if np.random.random() < self.p:
+        img = img[:, ::-1, :]
+        masks = masks[:, :, ::-1]
 
-            H, W, _ = img.shape
-            bbox = boxes.copy() # remove this
-            x_max = W - bbox[:, 0]
-            x_min = W - bbox[:, 2]
-            bbox[:, 0] = x_min
-            bbox[:, 2] = x_max
-            return img, masks, bbox
+        H, W, _ = img.shape
+        bbox = boxes.copy() # remove this
+        x_max = W - bbox[:, 0]
+        x_min = W - bbox[:, 2]
+        bbox[:, 0] = x_min
+        bbox[:, 2] = x_max
+        # return img, masks, bbox
 
         return img, masks, boxes
 
@@ -2687,8 +2689,8 @@ class CopyPaste:
         x2 = np.max(X_vals)
         return np.array([x1, y1, x2, y2], dtype=np.float32)
 
-    def is_box_occluded(self, box1, box2): # calculates the distance between masks
-        if np.sum(np.where(abs(box1 - box2) > self.box_distance_thresh, 1, 0)) > 0:
+    def is_box_occluded(self, box1, box2, box_distance_thresh): # calculates the distance between masks
+        if np.sum(np.where(abs(box1 - box2) > box_distance_thresh, 1, 0)) > 0:
             return True
         return False
 
@@ -2810,6 +2812,10 @@ class CopyPaste:
 
         return final_src_imgs, final_src_boxes, final_src_masks, final_src_labels
 
+    def add_box_mask_label_2_dict(self, box, mask, label, dct, idx):
+        dct[idx] = {"box":box, "mask":mask, "label":label}
+        return dct
+
     def __call__(self, results):
         results_cpy = copy.deepcopy(results)
         results_cpy2 = results_cpy['mix_results'][0]
@@ -2836,7 +2842,7 @@ class CopyPaste:
 
         rescaled_dest_img, rescaled_dest_boxes, rescaled_dest_masks, rescaled_dest_labels = self.dest_jitter(img_dest, masks_dest, boxes_dest, labels_dest)
 
-        rescaled_src_imgs, rescaled_src_boxes, rescaled_src_masks, rescaled_src_labels = self.src_jitter(img_src,
+        rescaled_src_imgs, rescaled_src_boxes, rescaled_src_masks, rescaled_src_labels = self.src_jitter(img_src_flipped,
                                                                                                          selected_masks_src_flipped,
                                                                                                          selected_boxes_src_flipped,
                                                                                                          selected_labels_src)
@@ -2846,8 +2852,8 @@ class CopyPaste:
 
         # get the pastable items
         for src_img, src_box, src_mask in zip(rescaled_src_imgs, rescaled_src_boxes, rescaled_src_masks):
-            w, h, _ = rescaled_dest_img.shape
-            w_src, h_src, _ = src_img.shape
+            h, w, _ = rescaled_dest_img.shape
+            h_src, w_src, _ = src_img.shape
             pastable_src_boxes.append(self.rescale_box((w,h), (w_src, h_src), np.array([src_box]))[0])
             pastable_src_imgs.append(self.rescale(w, h, src_img))
             pastable_src_masks.append(self.rescale(w, h, src_mask))
@@ -2868,13 +2874,29 @@ class CopyPaste:
             final_dest_masks.append(dest_mask)
             final_dest_labels.append(dest_label)
 
-        for src_mask, src_img in zip(pastable_src_masks, pastable_src_imgs):
-            final_pastable_mask_cutout = cv2.bitwise_and(src_img, src_mask)
+        dict_index = 0
+        final_src_data = {}
+
+        for src_mask, src_img, src_box, src_label in zip(
+                pastable_src_masks, pastable_src_imgs, pastable_src_boxes, rescaled_src_labels):
+            src_mask_3channel = np.tile(src_mask[:,:,None],(1,1,3)) * 255
+            final_pastable_mask_cutout = cv2.bitwise_and(src_img, src_mask_3channel)
+            rescaled_dest_img = cv2.subtract(rescaled_dest_img, src_mask_3channel, self.box_distance_thresh)
             rescaled_dest_img = cv2.add(rescaled_dest_img, final_pastable_mask_cutout)
 
-        final_dest_boxes.append(pastable_src_boxes)
-        final_dest_masks.append(pastable_src_masks)
-        final_dest_labels.append(rescaled_src_labels)
+            for idx in final_src_data.keys():
+                priority_bx = src_box
+                old_bx = final_src_data[idx]["box"]
+                if self.is_box_occluded(priority_bx, old_bx, self.box_distance_thresh):
+                    final_src_data.pop(idx)
+
+            self.add_box_mask_label_2_dict(src_box, src_mask, src_label, final_src_data, dict_index)
+            dict_index += 1
+
+        for vals in final_src_data.values():
+            final_dest_boxes.append(vals['box'])
+            final_dest_masks.append(vals['mask'])
+            final_dest_labels.append(vals['label'])
 
         results['img'] = rescaled_dest_img
         results['img_shape'] = rescaled_dest_img.shape
