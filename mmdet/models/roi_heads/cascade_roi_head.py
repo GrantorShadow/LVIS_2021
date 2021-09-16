@@ -164,7 +164,8 @@ class CascadeRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
         # do not support caffe_c4 model anymore
         mask_pred = mask_head(mask_feats)
 
-        mask_results = dict(mask_pred=mask_pred)
+        mask_results = dict(mask_pred=mask_pred, mask_feats=mask_feats)
+        # mask_results = dict(mask_pred=mask_pred)
         return mask_results
 
     def _mask_forward_train(self,
@@ -173,6 +174,7 @@ class CascadeRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
                             sampling_results,
                             gt_masks,
                             rcnn_train_cfg,
+                            img_metas,
                             bbox_feats=None):
         """Run forward function and calculate loss for mask head in
         training."""
@@ -185,7 +187,8 @@ class CascadeRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
         loss_mask = self.mask_head[stage].loss(mask_results['mask_pred'],
                                                mask_targets, pos_labels)
 
-        mask_results.update(loss_mask=loss_mask)
+        mask_results.update(loss_mask=loss_mask, mask_targets=mask_targets)
+        # mask_results.update(loss_mask=loss_mask)
         return mask_results
 
     def forward_train(self,
@@ -256,7 +259,7 @@ class CascadeRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
             if self.with_mask:
                 mask_results = self._mask_forward_train(
                     i, x, sampling_results, gt_masks, rcnn_train_cfg,
-                    bbox_results['bbox_feats'])
+                    img_metas, bbox_results['bbox_feats'])
                 for name, value in mask_results['loss_mask'].items():
                     losses[f's{i}.{name}'] = (
                         value * lw if 'loss' in name else value)
