@@ -2758,7 +2758,7 @@ class CopyPaste:
     def src_jitter(self, img_src, masks_src, boxes_src, labels_src):
 
         src_img_rescale_ratios = self.get_rescale_ratio(len(masks_src))
-        w, h, _ = img_src.shape
+        h, w, _ = img_src.shape
 
         masks_src_rescaled, boxes_src_rescaled, images_src_rescaled, x_y_rndm = [], [], [], []
 
@@ -2784,12 +2784,12 @@ class CopyPaste:
 
             # crop the masks and the boxes
             if rescale_ratio <= 1.0:  # padding
-                img_src_rescaled_pad = np.ones((w, h, 3), dtype=np.uint8) * 168
-                img_src_rescaled_pad[x:x+w_new, y:y+h_new, :] = img
+                img_src_rescaled_pad = np.ones((h, w, 3), dtype=np.uint8) * 168
+                img_src_rescaled_pad[y:y+h_new, x:x+w_new, :] = img
                 final_src_imgs.append(img_src_rescaled_pad)
 
-                mask_pad = np.zeros((w,h), dtype=np.uint8)
-                mask_pad[x:x+w_new, y:y+h_new] = mask
+                mask_pad = np.zeros((h, w), dtype=np.uint8)
+                mask_pad[y:y+h_new, x:x+w_new] = mask
                 final_src_masks.append(mask_pad)
                 box[0] += x
                 box[1] += y
@@ -2799,7 +2799,7 @@ class CopyPaste:
                 final_src_labels.append(label)
 
             else:  # crop
-                img_crop = img[x:x+w, y:y+h, :]
+                img_crop = img[y:y+h, x:x+w, :]
                 mask_crop = mask[y:y+h, x:x+w]
                 box = self.clip_box(np.array([box]), (x, y, w, h))[0]
                 if np.sum(mask_crop) >= 30:
