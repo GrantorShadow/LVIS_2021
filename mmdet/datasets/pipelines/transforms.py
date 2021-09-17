@@ -2816,7 +2816,40 @@ class CopyPaste:
         dct[idx] = {"box":box, "mask":mask, "label":label, "is_valid":True}
         return dct
 
+    def _load_masks(self, results, masks):
+        from mmdet.core import BitmapMasks
+
+        """Private function to load mask annotations.
+
+        Args:
+            results (dict): Result dict from :obj:`mmdet.CustomDataset`.
+
+        Returns:
+            dict: The dict contains loaded mask annotations.
+                If ``self.poly2mask`` is set ``True``, `gt_mask` will contain
+                :obj:`PolygonMasks`. Otherwise, :obj:`BitmapMasks` is used.
+        """
+
+        h, w = results['img_info']['height'], results['img_info']['width']
+        gt_masks = results['ann_info']['masks']
+        if self.poly2mask:
+            gt_masks = BitmapMasks(
+                [self._poly2mask(mask, h, w) for mask in gt_masks], h, w)
+        else:
+            gt_masks = PolygonMasks(
+                [self.process_polygons(polygons) for polygons in gt_masks], h,
+                w)
+        results['gt_masks'] = gt_masks
+        results['mask_fields'].append('gt_masks')
+        return results
+
+    def get_bitmapmasks(self, final_mask_list):
+        from mmdet.core import BitmapMasks
+        masks_ndarray = np.array(final_mask_list)
+        return BitmapMasks(masks_ndarray, masks_ndarray.shape[1], masks_ndarray.shape[2])
+
     def __call__(self, results):
+
         results_cpy = copy.deepcopy(results)
         results_cpy2 = results_cpy['mix_results'][0]
 
@@ -2900,11 +2933,13 @@ class CopyPaste:
                 final_dest_masks.append(vals['mask'])
                 final_dest_labels.append(vals['label'])
 
+        final_dest_masks = self.get_bitmapmasks(final_dest_masks)
+
         results['img'] = rescaled_dest_img
         results['img_shape'] = rescaled_dest_img.shape
         results['ori_shape'] = rescaled_dest_img.shape
         results['gt_masks'] = final_dest_masks
-        results['gt_bboxes'] = final_dest_boxes
-        results['gt_labels'] = final_dest_labels
+        results['gt_bboxes'] = np.array(final_dest_boxes)
+        results['gt_labels'] = np.array(final_dest_labels)
 
         return results
