@@ -2830,33 +2830,6 @@ class CopyPaste:
         dct[idx] = {"box":box, "mask":mask, "label":label, "is_valid":True}
         return dct
 
-    def _load_masks(self, results, masks):
-        from mmdet.core import BitmapMasks
-
-        """Private function to load mask annotations.
-
-        Args:
-            results (dict): Result dict from :obj:`mmdet.CustomDataset`.
-
-        Returns:
-            dict: The dict contains loaded mask annotations.
-                If ``self.poly2mask`` is set ``True``, `gt_mask` will contain
-                :obj:`PolygonMasks`. Otherwise, :obj:`BitmapMasks` is used.
-        """
-
-        h, w = results['img_info']['height'], results['img_info']['width']
-        gt_masks = results['ann_info']['masks']
-        if self.poly2mask:
-            gt_masks = BitmapMasks(
-                [self._poly2mask(mask, h, w) for mask in gt_masks], h, w)
-        else:
-            gt_masks = PolygonMasks(
-                [self.process_polygons(polygons) for polygons in gt_masks], h,
-                w)
-        results['gt_masks'] = gt_masks
-        results['mask_fields'].append('gt_masks')
-        return results
-
     @staticmethod
     def get_bitmapmasks(final_mask_list):
         from mmdet.core import BitmapMasks
