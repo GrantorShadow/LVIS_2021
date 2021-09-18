@@ -2939,7 +2939,7 @@ class CopyPaste:
         results['img_shape'] = rescaled_dest_img.shape
         results['ori_shape'] = rescaled_dest_img.shape
         results['gt_masks'] = final_dest_masks
-        results['gt_bboxes'] = np.array(final_dest_boxes)
+        results['gt_bboxes'] = np.array(final_dest_boxes, dtype=np.float32)
         results['gt_labels'] = np.array(final_dest_labels)
 
         return results
