@@ -2630,9 +2630,6 @@ class CopyPaste:
 
         for i in range(self.max_iters):
             index = random.randint(0, len(dataset))
-            # gt_bboxes_i = dataset.get_ann_info(index)['bboxes']
-            # if len(gt_bboxes_i) != 0:
-            #     break
 
         return index
 
