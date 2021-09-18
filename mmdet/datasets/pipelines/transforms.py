@@ -24,9 +24,6 @@ except ImportError:
     albumentations = None
     Compose = None
 
-import PIL.Image as im
-import PIL.ImageDraw as draw
-
 
 @PIPELINES.register_module()
 class Resize:
@@ -297,6 +294,7 @@ class Resize:
                 self._random_scale(results)
         else:
             if not self.override:
+                results.pop('scale_factor')
                 assert 'scale_factor' not in results, (
                     'scale and scale_factor cannot be both set.')
             else:
@@ -537,7 +535,7 @@ class RandomShift:
                 bbox_w = bboxes[..., 2] - bboxes[..., 0]
                 bbox_h = bboxes[..., 3] - bboxes[..., 1]
                 valid_inds = (bbox_w > self.filter_thr_px) & (
-                    bbox_h > self.filter_thr_px)
+                        bbox_h > self.filter_thr_px)
                 # If the shift does not contain any gt-bbox area, skip this
                 # image.
                 if key == 'gt_bboxes' and not valid_inds.any():
@@ -738,7 +736,7 @@ class RandomCrop:
                  allow_negative_crop=False,
                  bbox_clip_border=True):
         if crop_type not in [
-                'relative_range', 'relative', 'absolute', 'absolute_range'
+            'relative_range', 'relative', 'absolute', 'absolute_range'
         ]:
             raise ValueError(f'Invalid crop_type {crop_type}.')
         if crop_type in ['absolute', 'absolute_range']:
@@ -801,7 +799,7 @@ class RandomCrop:
                 bboxes[:, 0::2] = np.clip(bboxes[:, 0::2], 0, img_shape[1])
                 bboxes[:, 1::2] = np.clip(bboxes[:, 1::2], 0, img_shape[0])
             valid_inds = (bboxes[:, 2] > bboxes[:, 0]) & (
-                bboxes[:, 3] > bboxes[:, 1])
+                    bboxes[:, 3] > bboxes[:, 1])
             # If the crop does not contain any gt-bbox area and
             # allow_negative_crop is False, skip this image.
             if (key == 'gt_bboxes' and not valid_inds.any()
@@ -818,7 +816,7 @@ class RandomCrop:
             if mask_key in results:
                 results[mask_key] = results[mask_key][
                     valid_inds.nonzero()[0]].crop(
-                        np.asarray([crop_x1, crop_y1, crop_x2, crop_y2]))
+                    np.asarray([crop_x1, crop_y1, crop_x2, crop_y2]))
 
         # crop semantic seg
         for key in results.get('seg_fields', []):
@@ -1247,7 +1245,7 @@ class MinIoURandomCrop:
                 # seg fields
                 for key in results.get('seg_fields', []):
                     results[key] = results[key][patch[1]:patch[3],
-                                                patch[0]:patch[2]]
+                                   patch[0]:patch[2]]
                 return results
 
     def __repr__(self):
@@ -1672,8 +1670,8 @@ class RandomCenterCropPad:
         """
         center = (boxes[:, :2] + boxes[:, 2:]) / 2
         mask = (center[:, 0] > patch[0]) * (center[:, 1] > patch[1]) * (
-            center[:, 0] < patch[2]) * (
-                center[:, 1] < patch[3])
+                center[:, 0] < patch[2]) * (
+                       center[:, 1] < patch[3])
         return mask
 
     def _crop_image_and_paste(self, image, center, size):
@@ -1723,7 +1721,7 @@ class RandomCenterCropPad:
             cropped_center_y - top, cropped_center_y + bottom,
             cropped_center_x - left, cropped_center_x + right
         ],
-                          dtype=np.float32)
+            dtype=np.float32)
 
         return cropped_img, border, patch
 
@@ -1777,7 +1775,7 @@ class RandomCenterCropPad:
                         bboxes[:, 0:4:2] = np.clip(bboxes[:, 0:4:2], 0, new_w)
                         bboxes[:, 1:4:2] = np.clip(bboxes[:, 1:4:2], 0, new_h)
                     keep = (bboxes[:, 2] > bboxes[:, 0]) & (
-                        bboxes[:, 3] > bboxes[:, 1])
+                            bboxes[:, 3] > bboxes[:, 1])
                     bboxes = bboxes[keep]
                     results[key] = bboxes
                     if key in ['gt_bboxes']:
@@ -2118,7 +2116,7 @@ class Mosaic:
                              center_position_xy[0], \
                              center_position_xy[1]
             crop_coord = img_shape_wh[0] - (x2 - x1), img_shape_wh[1] - (
-                y2 - y1), img_shape_wh[0], img_shape_wh[1]
+                    y2 - y1), img_shape_wh[0], img_shape_wh[1]
 
         elif loc == 'top_right':
             # index1 to top right part of image
@@ -2329,7 +2327,7 @@ class MixUp:
         if padded_img.shape[1] > target_w:
             x_offset = random.randint(0, padded_img.shape[1] - target_w)
         padded_cropped_img = padded_img[y_offset:y_offset + target_h,
-                                        x_offset:x_offset + target_w]
+                             x_offset:x_offset + target_w]
 
         # 6. adjust bbox
         retrieve_gt_bboxes = retrieve_results['gt_bboxes']
@@ -2340,7 +2338,7 @@ class MixUp:
 
         if is_filp:
             retrieve_gt_bboxes[:, 0::2] = (
-                origin_w - retrieve_gt_bboxes[:, 0::2][:, ::-1])
+                    origin_w - retrieve_gt_bboxes[:, 0::2][:, ::-1])
 
         # 7. filter
         cp_retrieve_gt_bboxes = retrieve_gt_bboxes.copy()
@@ -2489,8 +2487,8 @@ class RandomAffine:
         translate_matrix = self._get_translation_matrix(trans_x, trans_y)
 
         warp_matrix = (
-            translate_matrix @ shear_matrix @ rotation_matrix @ scaling_matrix
-            @ center_matrix)
+                translate_matrix @ shear_matrix @ rotation_matrix @ scaling_matrix
+                @ center_matrix)
 
         img = cv2.warpPerspective(
             img,
@@ -2618,7 +2616,7 @@ class CopyPaste:
         self.resize_scale = scale
         self.occluded_area_thresh = occluded_area_thresh
         self.box_distance_thresh = box_distance_thresh
-        self.max_iters = max_iters
+        self.max_iters = max_iters # number of images needed
 
     def get_indexes(self, dataset):
         """Call function to collect indexes.
@@ -2632,9 +2630,9 @@ class CopyPaste:
 
         for i in range(self.max_iters):
             index = random.randint(0, len(dataset))
-            gt_bboxes_i = dataset.get_ann_info(index)['bboxes']
-            if len(gt_bboxes_i) != 0:
-                break
+            # gt_bboxes_i = dataset.get_ann_info(index)['bboxes']
+            # if len(gt_bboxes_i) != 0:
+            #     break
 
         return index
 
@@ -2658,13 +2656,15 @@ class CopyPaste:
 
         return img, masks, boxes
 
-    def rescale_box(self, reshaped_img_shape, img_shape, box):
+    @staticmethod
+    def rescale_box(reshaped_img_shape, img_shape, box):
         scale = np.divide(reshaped_img_shape, img_shape)
         new_top_left_corner = np.multiply(box[:,:2], scale)
         new_bottom_right_corner = np.multiply(box[:,2:], scale)
         return np.hstack((new_top_left_corner, new_bottom_right_corner))
 
-    def rescale(self, w, h, arr):
+    @staticmethod
+    def rescale(w, h, arr):
         arr = cv2.resize(arr, (w, h), interpolation=cv2.INTER_LINEAR)
         return arr
 
@@ -2674,11 +2674,13 @@ class CopyPaste:
             ratio.append(np.random.uniform(self.resize_scale[0], self.resize_scale[1]))
         return ratio
 
-    def get_updated_masks(self, parent_mask, child_mask):
+    @staticmethod
+    def get_updated_masks(parent_mask, child_mask):
         assert parent_mask.shape == child_mask.shape, "Cannot paste two arrays of different size"
         return np.where(parent_mask, 0, child_mask)
 
-    def get_box_from_mask(self, mask): # [x,y,w,h] format
+    @staticmethod
+    def get_box_from_mask(mask): # [x,y,w,h] format
         """Convert mask Y to a bounding box, assumes 0 as background nonzero object"""
         X_vals, Y_vals  = np.nonzero(mask) # gives in a Xi , Yi co-ord system in the cols and rows
         if len(Y_vals)==0:
@@ -2689,21 +2691,32 @@ class CopyPaste:
         x2 = np.max(X_vals)
         return np.array([x1, y1, x2, y2], dtype=np.float32)
 
-    def is_box_occluded(self, box1, box2, box_distance_thresh): # calculates the distance between masks
+    @staticmethod
+    def is_box_occluded(box1, box2, box_distance_thresh): # calculates the distance between masks
         if np.sum(np.where(abs(box1 - box2) > box_distance_thresh, 1, 0)) > 0:
             return True
         return False
 
-    def get_box_area(self, box):
+    @staticmethod
+    def get_box_area(box):
         return (box[3] - box[1]) * (box[2] - box[0])
 
-    def clip_box(self, bbox, x1y1wh):
+    @staticmethod
+    def clip_box(bbox, x1y1wh):
         x_, y_, w_, h_ = x1y1wh
         bbox = np.copy(bbox)
-        bbox_x1 = np.max((np.min((bbox[:, 0], np.tile(x_+w_-1, bbox.shape[0])), axis=0), np.tile(x_, bbox.shape[0])), axis=0) - np.tile(x_, bbox.shape[0])
-        bbox_y1 = np.max((np.min((bbox[:, 1], np.tile(y_+h_-1, bbox.shape[0])), axis=0), np.tile(y_, bbox.shape[0])), axis=0) - np.tile(y_, bbox.shape[0])
-        bbox_x2 = np.max((np.min((bbox[:, 2], np.tile(x_+w_-1, bbox.shape[0])), axis=0), np.tile(x_, bbox.shape[0])), axis=0) - np.tile(x_, bbox.shape[0])
-        bbox_y2 = np.max((np.min((bbox[:, 3], np.tile(y_+h_-1, bbox.shape[0])), axis=0), np.tile(y_, bbox.shape[0])), axis=0) - np.tile(y_, bbox.shape[0])
+        bbox_x1 = np.max((np.min((bbox[:, 0], np.tile(x_+w_-1, bbox.shape[0])), axis=0),
+                          np.tile(x_, bbox.shape[0])), axis=0) - np.tile(x_, bbox.shape[0])
+
+        bbox_y1 = np.max((np.min((bbox[:, 1], np.tile(y_+h_-1, bbox.shape[0])), axis=0),
+                          np.tile(y_, bbox.shape[0])), axis=0) - np.tile(y_, bbox.shape[0])
+
+        bbox_x2 = np.max((np.min((bbox[:, 2], np.tile(x_+w_-1, bbox.shape[0])), axis=0),
+                          np.tile(x_, bbox.shape[0])), axis=0) - np.tile(x_, bbox.shape[0])
+
+        bbox_y2 = np.max((np.min((bbox[:, 3], np.tile(y_+h_-1, bbox.shape[0])), axis=0),
+                          np.tile(y_, bbox.shape[0])), axis=0) - np.tile(y_, bbox.shape[0])
+
         return np.transpose(np.vstack((bbox_x1, bbox_y1, bbox_x2, bbox_y2)))
 
     def dest_jitter(self, img_dest, masks_dest, boxes_dest, labels_dest):
@@ -2812,7 +2825,8 @@ class CopyPaste:
 
         return final_src_imgs, final_src_boxes, final_src_masks, final_src_labels
 
-    def add_box_mask_label_2_dict(self, box, mask, label, dct, idx):
+    @staticmethod
+    def add_box_mask_label_2_dict(box, mask, label, dct, idx):
         dct[idx] = {"box":box, "mask":mask, "label":label, "is_valid":True}
         return dct
 
@@ -2843,10 +2857,22 @@ class CopyPaste:
         results['mask_fields'].append('gt_masks')
         return results
 
-    def get_bitmapmasks(self, final_mask_list):
+    @staticmethod
+    def get_bitmapmasks(final_mask_list):
         from mmdet.core import BitmapMasks
         masks_ndarray = np.array(final_mask_list)
         return BitmapMasks(masks_ndarray, masks_ndarray.shape[1], masks_ndarray.shape[2])
+
+    @staticmethod
+    def check_empty_lists(masks_src, masks_dest, results_cpy, results_cpy2):
+        if (not len(masks_src)) and (not len(masks_dest)):
+            rand_indx = np.random.randint(0, 2, size=1)
+            all_results = [results_cpy, results_cpy2]
+            return all_results[rand_indx]
+        if not len(masks_dest):
+            return results_cpy
+        if not len(masks_src):
+            return results_cpy2
 
     def __call__(self, results):
 
@@ -2864,6 +2890,8 @@ class CopyPaste:
         labels_dest = results_cpy2.get('gt_labels')
         boxes_dest = results_cpy2.get('gt_bboxes')
 
+        self.check_empty_lists(masks_src, masks_dest, results_cpy, results_cpy2)
+
         # get a fixed number of random items
         selected_idxs = self.get_random_idx(masks_src)
         selected_masks_src = np.array(list(map(masks_src.__getitem__, selected_idxs)))
@@ -2880,7 +2908,8 @@ class CopyPaste:
                                                                                                          selected_boxes_src_flipped,
                                                                                                          selected_labels_src)
 
-        #CHECK for empty lists
+        self.check_empty_lists(masks_src, masks_dest, results_cpy, results_cpy2)
+
         pastable_src_imgs, pastable_src_boxes, pastable_src_masks = [], [], []
 
         # get the pastable items
@@ -2900,8 +2929,8 @@ class CopyPaste:
             updated_dest_mask = self.get_updated_masks(collated_pastable_src_mask, dest_mask)
 
             updated_dest_box = self.get_box_from_mask(updated_dest_mask)
-            if np.sum(updated_dest_mask) <= self.occluded_area_thresh:
-                if self.is_box_occluded(updated_dest_box, dest_box, self.box_distance_thresh):
+            if self.is_box_occluded(updated_dest_box, dest_box, self.box_distance_thresh):
+                if np.sum(updated_dest_mask) <= self.occluded_area_thresh:
                     continue
             final_dest_boxes.append(dest_box)
             final_dest_masks.append(dest_mask)
@@ -2932,6 +2961,12 @@ class CopyPaste:
                 final_dest_boxes.append(vals['box'])
                 final_dest_masks.append(vals['mask'])
                 final_dest_labels.append(vals['label'])
+
+        # if final dest masks are empty
+        if not len(final_dest_masks):
+            rand_indx = np.random.randint(0, 2, size=1)
+            all_results = [results_cpy, results_cpy2]
+            return all_results[rand_indx]
 
         final_dest_masks = self.get_bitmapmasks(final_dest_masks)
 
